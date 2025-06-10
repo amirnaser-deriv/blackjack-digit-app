@@ -90,17 +90,21 @@ const INITIAL_PRICE = 100;
 const MU = 0.0;
 const SIGMA = 0.015;
 
-const gbmStep = (S_old) => {
+const gbmStep = (S_old: number): number => {
   const dt = 1;
   const u1 = Math.random();
   const u2 = Math.random();
-  const z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+  const z =
+    Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
   const S_new =
-    S_old * Math.exp((MU - 0.5 * SIGMA * SIGMA) * dt + SIGMA * Math.sqrt(dt) * z);
+    S_old *
+    Math.exp((MU - 0.5 * SIGMA * SIGMA) * dt + SIGMA * Math.sqrt(dt) * z);
   return parseFloat(S_new.toFixed(2));
 };
 
-const lastDigit = (price) => Math.floor(price * 100) % 10;
+const lastDigit = (price: number): number =>
+  Math.floor(price * 100) % 10;
+
 
 // ==========================================================
 // Main React Component
