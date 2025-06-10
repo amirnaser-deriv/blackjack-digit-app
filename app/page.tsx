@@ -33,7 +33,8 @@ import {
 // ==========================================================
 // Utility helpers for combinatorics & probability of digit sums
 // ==========================================================
-const comb = (n, r) => {
+/* ---- math helpers with explicit types ---- */
+const comb = (n: number, r: number): number => {
   if (r < 0 || r > n) return 0;
   r = Math.min(r, n - r);
   let num = 1;
@@ -45,7 +46,7 @@ const comb = (n, r) => {
   return num / denom;
 };
 
-const P_k_n = (k, n) => {
+const P_k_n = (k: number, n: number): number => {
   if (n < 0 || n > 9 * k) return 0;
   let sum = 0;
   for (let j = 0; j <= Math.floor(n / 10); j++) {
@@ -58,23 +59,28 @@ const P_k_n = (k, n) => {
   return sum / 10 ** k;
 };
 
-const F_k = (k, n) => {
+const F_k = (k: number, n: number): number => {
   let acc = 0;
   for (let m = 0; m <= n; m++) acc += P_k_n(k, m);
   return acc;
 };
 
-const prob = (k, n, bet) => {
+const prob = (k: number, n: number, bet: string): number => {
   if (bet === "Equal") return P_k_n(k, n);
   if (bet === "Higher") return 1 - F_k(k, n);
   if (bet === "Lower") return F_k(k, n - 1);
   return 0;
 };
 
-const payout = (stake, k, n, bet, margin = 0) => {
+const payout = (
+  stake: number,
+  k: number,
+  n: number,
+  bet: string,
+  margin = 0
+): number => {
   const p = prob(k, n, bet);
-  if (p <= 0) return 0;
-  return parseFloat(((stake * (1 - margin)) / p).toFixed(2));
+  return p > 0 ? parseFloat(((stake * (1 - margin)) / p).toFixed(2)) : 0;
 };
 
 // ==========================================================
