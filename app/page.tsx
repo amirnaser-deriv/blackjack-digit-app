@@ -89,6 +89,8 @@ const payout = (
 const INITIAL_PRICE = 100;
 const MU = 0.0;
 const SIGMA = 0.015;
+const HISTORY_LEN = 15;      // how many points you want to keep
+
 
 const gbmStep = (S_old: number): number => {
   const dt = 1;
@@ -156,7 +158,10 @@ const evaluateOutcome = (sum: number): void => {
       priceRef.current = next;
       tickRef.current += 1;
       setPrice(next);
-      setHistory((h) => [...h.slice(-99), { t: tickRef.current, price: next }]);
+      setHistory((h) => [
+        ...h.slice(-(HISTORY_LEN - 1)),          // keep at most HISTORY_LEN-1 old points
+        { t: tickRef.current, price: next },     // append the newest point
+      ]);
 
       if (active) {
         setDigits((prev) => {
@@ -177,6 +182,16 @@ const evaluateOutcome = (sum: number): void => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticksLeft]);
+
+  // Hide the win/lose banner after 3 s and show odds again
+  useEffect(() => {
+    if (outcome) {
+      const id = setTimeout(() => {
+        setOutcome(null);  // clears banner
+      }, 3000);            // <- adjust to taste
+      return () => clearTimeout(id);
+    }
+  }, [outcome]);
 
   const handlePlaceBet = () => {
     setOutcome(null);
@@ -227,7 +242,7 @@ const evaluateOutcome = (sum: number): void => {
                   }
                   labelFormatter={() => ""}
                 />
-                <Line type="monotone" dataKey="price" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="price" dot={false} strokeWidth={2} isAnimationActive={false}  />
               </LineChart>
             </ResponsiveContainer>
           </div>
