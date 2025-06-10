@@ -141,14 +141,14 @@ export default function BlackjackOptionApp() {
 
   const runningSum = useMemo(() => digits.reduce((a, b) => a + b, 0), [digits]);
 
-  // Determine win/lose after final tick
-  const evaluateOutcome = (sum) => {
-    let win;
-    if (betType === "Equal") win = sum === target;
-    else if (betType === "Higher") win = sum > target;
-    else win = sum < target;
-    setOutcome(win ? "win" : "lose");
-  };
+  /* ---- outcome helper ---- */
+const evaluateOutcome = (sum: number): void => {
+  let win: boolean;
+  if (betType === "Equal") win = sum === target;
+  else if (betType === "Higher") win = sum > target;
+  else win = sum < target;
+  setOutcome(win ? "win" : "lose");
+};
 
   // Price simulation loop
   useEffect(() => {
