@@ -136,9 +136,8 @@ export default function BlackjackOptionApp() {
   // --- Contract state --- //
   const [active, setActive] = useState(false);
   const [ticksLeft, setTicksLeft] = useState(0);
-  const [digits, setDigits] = useState([]);
-  const [outcome, setOutcome] = useState(null);
-
+  const [digits, setDigits] = useState<number[]>([]);
+  const [outcome, setOutcome] = useState<"win" | "lose" | null>(null);
   const runningSum = useMemo(() => digits.reduce((a, b) => a + b, 0), [digits]);
 
   /* ---- outcome helper ---- */
@@ -223,7 +222,9 @@ const evaluateOutcome = (sum: number): void => {
                 <XAxis dataKey="t" hide />
                 <YAxis domain={["auto", "auto"]} hide />
                 <Tooltip
-                  formatter={(v) => `$${v.toFixed(2)}`}
+                  formatter={(v: number | string) =>
+                    `$${(typeof v === "number" ? v : Number(v)).toFixed(2)}`
+                  }
                   labelFormatter={() => ""}
                 />
                 <Line type="monotone" dataKey="price" dot={false} strokeWidth={2} />
