@@ -4,7 +4,7 @@ import React, {
   useState,
   useMemo,
   useEffect,
-  useRef
+  useRef,
 } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,12 +14,11 @@ import {
   SelectTrigger,
   SelectContent,
   SelectItem,
-  SelectValue
+  SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { motion } from "framer-motion";
 import {
   ResponsiveContainer,
   LineChart,
@@ -27,13 +26,12 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid
+  CartesianGrid,
 } from "recharts";
 
 // ==========================================================
 // Utility helpers for combinatorics & probability of digit sums
 // ==========================================================
-/* ---- math helpers with explicit types ---- */
 const comb = (n: number, r: number): number => {
   if (r < 0 || r > n) return 0;
   r = Math.min(r, n - r);
@@ -77,36 +75,61 @@ const payout = (
   k: number,
   n: number,
   bet: string,
-  margin = 0
+  margin = 0,
 ): number => {
   const p = prob(k, n, bet);
   return p > 0 ? parseFloat(((stake * (1 - margin)) / p).toFixed(2)) : 0;
 };
 
-// ==========================================================
-// Geometric Brownian Motion (GBM) simulator for index price
-// ==========================================================
-const INITIAL_PRICE = 100;
-const MU = 0.0;
-const SIGMA = 0.015;
-const HISTORY_LEN = 15;      // how many points you want to keep
+// ======================
+// Deriv live‑tick helper
+// ======================
+const DERIV_WS_URL =
+  "wss://ws.binaryws.com/websockets/v3?l=EN&app_id=1089"; // demo app‑id
 
+const useDerivTicks = (symbol: string) => {
+  const [quote, setQuote] = useState<number | null>(null);
+  const [connected, setConnected] = useState(false);
 
-const gbmStep = (S_old: number): number => {
-  const dt = 1;
-  const u1 = Math.random();
-  const u2 = Math.random();
-  const z =
-    Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-  const S_new =
-    S_old *
-    Math.exp((MU - 0.5 * SIGMA * SIGMA) * dt + SIGMA * Math.sqrt(dt) * z);
-  return parseFloat(S_new.toFixed(2));
+  useEffect(() => {
+    const ws = new WebSocket(DERIV_WS_URL);
+
+    ws.onopen = () => {
+      setConnected(true);
+      ws.send(JSON.stringify({ ticks: symbol, subscribe: 1 }));
+    };
+
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.msg_type === "tick") {
+        setQuote(parseFloat(msg.tick.quote));
+      }
+    };
+
+    ws.onerror = (e) => console.error("WS error", e);
+    ws.onclose = () => setConnected(false);
+
+    return () => ws.close();
+  }, [symbol]);
+
+  return { quote, connected } as const;
 };
 
-const lastDigit = (price: number): number =>
-  Math.floor(price * 100) % 10;
+// ======================
+// Misc helpers
+// ======================
+const HISTORY_LEN = 10; // how many price points to retain for the chart
+const lastDigit = (price: number): number => Math.floor(price * 100) % 10;
 
+// Available markets for the user to pick
+const INDEX_OPTIONS = [
+  { label: "100 Vol (2 sec) Index ", value: "R_100" },
+  { label: "100 Vol Index",       value: "1HZ100V" },
+  { label: "CRASH 300 Index",       value: "CRASH300N" },
+  { label: "BOOM 300 Index",       value: "BOOM300N" },
+  { label: "Bull Index",       value: "RDBULL" },
+  { label: "Bear Index",       value: "RDBEAR" },
+];
 
 // ==========================================================
 // Main React Component
@@ -118,21 +141,14 @@ export default function BlackjackOptionApp() {
   const [betType, setBetType] = useState("Equal");
   const [stake, setStake] = useState(1.0);
   const [margin, setMargin] = useState(0.05);
+  const [symbol, setSymbol] = useState("1HZ100V");   // default market
 
-  // Pre-computed odds & payouts
-  const summary = useMemo(() => {
-    const p = prob(duration, target, betType);
-    return {
-      p,
-      fair: payout(stake, duration, target, betType, 0),
-      offered: payout(stake, duration, target, betType, margin)
-    };
-  }, [duration, target, betType, stake, margin]);
 
-  // --- GBM ticker --- //
-  const [price, setPrice] = useState(INITIAL_PRICE);
-  const [history, setHistory] = useState([{ t: 0, price: INITIAL_PRICE }]);
-  const priceRef = useRef(INITIAL_PRICE);
+  // Live feed (use any synthetic symbol you prefer)
+  const { quote, connected } = useDerivTicks(symbol);
+
+  // Price history for the chart
+  const [history, setHistory] = useState<{ t: number; price: number }[]>([]);
   const tickRef = useRef(0);
 
   // --- Contract state --- //
@@ -142,37 +158,40 @@ export default function BlackjackOptionApp() {
   const [outcome, setOutcome] = useState<"win" | "lose" | null>(null);
   const runningSum = useMemo(() => digits.reduce((a, b) => a + b, 0), [digits]);
 
+  // Pre‑computed odds & payouts (recompute when inputs change)
+  const summary = useMemo(() => {
+    const p = prob(duration, target, betType);
+    return {
+      p,
+      fair: payout(stake, duration, target, betType, 0),
+      offered: payout(stake, duration, target, betType, margin),
+    };
+  }, [duration, target, betType, stake, margin]);
+
   /* ---- outcome helper ---- */
-const evaluateOutcome = (sum: number): void => {
-  let win: boolean;
-  if (betType === "Equal") win = sum === target;
-  else if (betType === "Higher") win = sum > target;
-  else win = sum < target;
-  setOutcome(win ? "win" : "lose");
-};
+  const evaluateOutcome = (sum: number): void => {
+    let win: boolean;
+    if (betType === "Equal") win = sum === target;
+    else if (betType === "Higher") win = sum > target;
+    else win = sum < target;
+    setOutcome(win ? "win" : "lose");
+  };
 
-  // Price simulation loop
+  // Push every real tick into state
   useEffect(() => {
-    const id = setInterval(() => {
-      const next = gbmStep(priceRef.current);
-      priceRef.current = next;
-      tickRef.current += 1;
-      setPrice(next);
-      setHistory((h) => [
-        ...h.slice(-(HISTORY_LEN - 1)),          // keep at most HISTORY_LEN-1 old points
-        { t: tickRef.current, price: next },     // append the newest point
-      ]);
+    if (quote === null) return; // nothing yet
 
-      if (active) {
-        setDigits((prev) => {
-          const arr = [...prev, lastDigit(next)];
-          return arr;
-        });
-        setTicksLeft((tl) => tl - 1);
-      }
-    }, 1000);
-    return () => clearInterval(id);
-  }, [active]);
+    tickRef.current += 1;
+    setHistory((h) => [
+      ...h.slice(-(HISTORY_LEN - 1)),
+      { t: tickRef.current, price: quote },
+    ]);
+
+    if (active) {
+      setDigits((prev) => [...prev, lastDigit(quote)]);
+      setTicksLeft((tl) => tl - 1);
+    }
+  }, [quote, active]);
 
   // Finish contract when ticksLeft hits 0
   useEffect(() => {
@@ -180,18 +199,24 @@ const evaluateOutcome = (sum: number): void => {
       setActive(false);
       evaluateOutcome(runningSum);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticksLeft]);
+  }, [ticksLeft, active, runningSum]);
 
-  // Hide the win/lose banner after 3 s and show odds again
+  // Hide the win/lose banner after 1 s and show odds again
   useEffect(() => {
     if (outcome) {
-      const id = setTimeout(() => {
-        setOutcome(null);  // clears banner
-      }, 3000);            // <- adjust to taste
+      const id = setTimeout(() => setOutcome(null), 1000);
       return () => clearTimeout(id);
     }
   }, [outcome]);
+
+  //Reset chart & counters when the user changes symbol (Only if no contract is running; prevents mid-bet switches.)
+  useEffect(() => {
+  if (!active) {
+    setHistory([]);
+    tickRef.current = 0;
+    setDigits([]);
+  }
+}, [symbol, active]);
 
   const handlePlaceBet = () => {
     setOutcome(null);
@@ -209,30 +234,57 @@ const evaluateOutcome = (sum: number): void => {
         </Badge>
       ))}
       {Array.from({ length: ticksLeft }).map((_, i) => (
-        <Badge key={`p${i}`} variant="outline" className="opacity-50 font-mono text-sm">
+        <Badge
+          key={`p${i}`}
+          variant="outline"
+          className="opacity-50 font-mono text-sm"
+        >
           ?
         </Badge>
       ))}
     </div>
   );
 
+  // ==========================================================
+  // Render
+  // ==========================================================
   return (
-    <motion.div
-      className="flex flex-col items-center p-6 gap-6 max-w-xl mx-auto"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-    >
+    <div className="flex flex-col items-center p-6 gap-6 max-w-xl mx-auto">
       {/* Price Card */}
       <Card className="w-full shadow-lg border border-gray-200">
         <CardContent className="p-6 space-y-4">
-          <h2 className="text-xl font-bold text-center">Simulated Vol Index</h2>
-          <p className="text-center text-3xl font-mono">${price.toFixed(2)}</p>
+          <h2 className="text-xl font-bold text-center">
+          {INDEX_OPTIONS.find(o => o.value === symbol)?.label ?? symbol}
+          {!connected && (
+            <span className="ml-2 text-xs text-red-500">(offline)</span>
+          )}
+        </h2>
+          {/* ─── Index picker ─────────────────────────────────────────────── */}
+          <div className="space-y-2">
+            <Label>Market</Label>
+            <Select
+              value={symbol}
+              disabled={active}          // lock during an active bet
+              onValueChange={setSymbol}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select index" />
+              </SelectTrigger>
+              <SelectContent>
+                {INDEX_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-center text-3xl font-mono">
+            {quote !== null ? `$${quote.toFixed(2)}` : "--"}
+          </p>
           <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={history}
-                margin={{ top: 5, right: 10, left: 0, bottom: 0 }}
-              >
+              <LineChart data={history} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="t" hide />
                 <YAxis domain={["auto", "auto"]} hide />
@@ -242,7 +294,13 @@ const evaluateOutcome = (sum: number): void => {
                   }
                   labelFormatter={() => ""}
                 />
-                <Line type="monotone" dataKey="price" dot={false} strokeWidth={2} isAnimationActive={false}  />
+                <Line
+                  type="monotone"
+                  dataKey="price"
+                  dot={false}
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -252,7 +310,7 @@ const evaluateOutcome = (sum: number): void => {
       {/* Option Card */}
       <Card className="w-full shadow-lg border border-gray-200">
         <CardContent className="p-6 space-y-6">
-          <h1 className="text-2xl font-bold text-center">Blackjack-Digit Option</h1>
+          <h1 className="text-2xl font-bold text-center">Blackjack‑Digit Option</h1>
 
           {/* Inputs */}
           <div className="space-y-2">
@@ -282,7 +340,8 @@ const evaluateOutcome = (sum: number): void => {
               value={target}
               onChange={(e) => {
                 const n = parseInt(e.target.value, 10);
-                if (!isNaN(n)) setTarget(Math.max(0, Math.min(9 * duration, n)));
+                if (!isNaN(n))
+                  setTarget(Math.max(0, Math.min(9 * duration, n)));
               }}
             />
           </div>
@@ -346,7 +405,9 @@ const evaluateOutcome = (sum: number): void => {
                   You win ${summary.offered.toFixed(2)}!
                 </p>
               ) : (
-                <p className="text-lg font-bold text-red-600">You lose. Better luck next time!</p>
+                <p className="text-lg font-bold text-red-600">
+                  You lose. Better luck next time!
+                </p>
               )}
             </div>
           )}
@@ -371,6 +432,6 @@ const evaluateOutcome = (sum: number): void => {
           </Button>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 }
