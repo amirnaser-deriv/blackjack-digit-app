@@ -310,7 +310,7 @@ export default function BlackjackOptionApp() {
       {/* Option Card */}
       <Card className="w-full shadow-lg border border-gray-200">
         <CardContent className="p-6 space-y-6">
-          <h1 className="text-2xl font-bold text-center">Blackjack‑Digit Option</h1>
+          <h1 className="text-2xl font-bold text-center">TargetSum‑Digit Option</h1>
 
           {/* Inputs */}
           <div className="space-y-2">
