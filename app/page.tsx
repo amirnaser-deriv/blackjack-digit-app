@@ -63,22 +63,23 @@ const F_k = (k: number, n: number): number => {
   return acc;
 };
 
-const prob = (k: number, n: number, bet: string): number => {
-  if (bet === "Equal") return P_k_n(k, n);
-  if (bet === "Higher") return 1 - F_k(k, n);
-  if (bet === "Lower") return F_k(k, n - 1);
-  return 0;
+const prob = (k: number, n: number, dir: "Higher" | "Lower", eq: boolean) => {
+  if (dir === "Higher") return eq ? 1 - F_k(k, n - 1) : 1 - F_k(k, n);
+  // dir === "Lower"
+  return eq ? F_k(k, n) : F_k(k, n - 1);
 };
 
 const payout = (
   stake: number,
   k: number,
   n: number,
-  bet: string,
+  dir: "Higher" | "Lower",
+  eq: boolean,
   margin = 0,
 ): number => {
-  const p = prob(k, n, bet);
+  const p = prob(k, n, dir, eq);               // use the new helper
   return p > 0 ? parseFloat(((stake * (1 - margin)) / p).toFixed(2)) : 0;
+
 };
 
 // ======================
@@ -138,7 +139,8 @@ export default function BlackjackOptionApp() {
   // --- Inputs --- //
   const [duration, setDuration] = useState(5);
   const [target, setTarget] = useState(22);
-  const [betType, setBetType] = useState("Equal");
+  const [direction, setDirection] = useState<"Higher" | "Lower">("Higher");
+  const [allowEqual, setAllowEqual] = useState(false);   // ☐ Include "="
   const [stake, setStake] = useState(1.0);
   const [margin, setMargin] = useState(0.05);
   const [symbol, setSymbol] = useState("1HZ100V");   // default market
@@ -160,22 +162,24 @@ export default function BlackjackOptionApp() {
 
   // Pre‑computed odds & payouts (recompute when inputs change)
   const summary = useMemo(() => {
-    const p = prob(duration, target, betType);
+    const p = prob(duration, target, direction, allowEqual);
     return {
       p,
-      fair: payout(stake, duration, target, betType, 0),
-      offered: payout(stake, duration, target, betType, margin),
+      fair: payout(stake, duration, target, direction, allowEqual, 0),
+      offered: payout(stake, duration, target, direction, allowEqual, margin),
     };
-  }, [duration, target, betType, stake, margin]);
+  }, [duration, target, direction, allowEqual, stake, margin]);
+
 
   /* ---- outcome helper ---- */
-  const evaluateOutcome = (sum: number): void => {
-    let win: boolean;
-    if (betType === "Equal") win = sum === target;
-    else if (betType === "Higher") win = sum > target;
-    else win = sum < target;
+  const evaluateOutcome = (sum: number) => {
+    const win =
+      direction === "Higher"
+        ? allowEqual ? sum >= target : sum > target
+        : allowEqual ? sum <= target : sum < target;
     setOutcome(win ? "win" : "lose");
   };
+
 
   // Push every real tick into state
   useEffect(() => {
@@ -310,7 +314,7 @@ export default function BlackjackOptionApp() {
       {/* Option Card */}
       <Card className="w-full shadow-lg border border-gray-200">
         <CardContent className="p-6 space-y-6">
-          <h1 className="text-2xl font-bold text-center">TargetSum‑Digit Option</h1>
+          <h1 className="text-2xl font-bold text-center">Target Sum Digit Option</h1>
 
           {/* Inputs */}
           <div className="space-y-2">
@@ -345,19 +349,37 @@ export default function BlackjackOptionApp() {
               }}
             />
           </div>
-          <div className="space-y-2">
-            <Label>Bet Type</Label>
-            <Select value={betType} disabled={active} onValueChange={setBetType}>
+          {/* Direction selector */}
+          <div className="space-y-1">
+            <Label>Direction</Label>
+            <Select
+              value={direction}
+              disabled={active}
+              onValueChange={(v) => setDirection(v as "Higher" | "Lower")}
+            >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select bet" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Equal">Equal</SelectItem>
-                <SelectItem value="Higher">Higher</SelectItem>
-                <SelectItem value="Lower">Lower</SelectItem>
+                <SelectItem value="Higher">Higher (&gt;)</SelectItem>
+                <SelectItem value="Lower">Lower (&lt;)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          
+          {/* Allow equal checkbox */}
+          <div className="flex items-center space-x-2">
+            <input
+              id="allowEqual"
+              type="checkbox"
+              disabled={active}
+              checked={allowEqual}
+              onChange={(e) => setAllowEqual(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <Label htmlFor="allowEqual">Allow Equal</Label>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="stake">Stake (USD)</Label>
             <Input
@@ -371,7 +393,7 @@ export default function BlackjackOptionApp() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="margin">House Edge (%)</Label>
+            <Label htmlFor="margin">Deriv Edge (%)</Label>
             <Input
               id="margin"
               type="number"
